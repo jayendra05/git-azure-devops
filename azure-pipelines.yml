@@ -1,0 +1,69 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+- group: Azure Login
+
+stages:
+
+# =========================
+# STAGE 1: PLAN
+# =========================
+- stage: Plan
+  displayName: "Terraform Plan"
+
+  jobs:
+  - job: PlanJob
+    steps:
+
+    # Install Terraform
+    - task: TerraformInstaller@1
+      inputs:
+        terraformVersion: '1.6.0'
+
+    # Run Terraform Plan
+    - script: |
+        export ARM_SUBSCRIPTION_ID=$(subscription_id)
+        export ARM_CLIENT_ID=$(client_id)
+        export ARM_CLIENT_SECRET=$(client_secret)
+        export ARM_TENANT_ID=$(tenant_id)
+
+        terraform init
+        terraform validate
+        terraform plan -var-file=env/dev.tfvars
+      displayName: "Terraform Init & Plan"
+
+# =========================
+# STAGE 2: APPLY
+# =========================
+- stage: Apply
+  displayName: "Terraform Apply"
+  dependsOn: Plan
+  condition: succeeded()
+
+  jobs:
+  - deployment: ApplyJob
+    displayName: "Deploy Infra"
+    environment: 'production'   # 👈 approval here
+
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          - task: TerraformInstaller@1
+            inputs:
+              terraformVersion: '1.6.0'
+
+          - script: |
+              export ARM_SUBSCRIPTION_ID=$(subscription_id)
+              export ARM_CLIENT_ID=$(client_id)
+              export ARM_CLIENT_SECRET=$(client_secret)
+              export ARM_TENANT_ID=$(tenant_id)
+
+              terraform init
+              terraform apply -var-file=env/prod.tfvars -auto-approve
+            displayName: "Terraform Apply"
