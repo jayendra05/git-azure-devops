@@ -4,41 +4,52 @@ trigger:
 pool:
   vmImage: 'ubuntu-latest'
 
+# 🔐 Variable group (your Azure credentials)
 variables:
 - group: Azure Login
 
 stages:
 
-# =========================
+# =========================================
 # STAGE 1: PLAN
-# =========================
+# =========================================
 - stage: Plan
   displayName: "Terraform Plan"
 
   jobs:
   - job: PlanJob
+    displayName: "Plan Infrastructure"
+
     steps:
 
-    # Install Terraform
-    - task: TerraformInstaller@1
-      inputs:
-        terraformVersion: '1.6.0'
+    # Install Terraform (no extension needed)
+    - script: |
+        echo "Installing Terraform..."
+        wget https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_amd64.zip
+        unzip terraform_1.6.0_linux_amd64.zip
+        sudo mv terraform /usr/local/bin/
+        terraform -version
+      displayName: "Install Terraform"
 
     # Run Terraform Plan
     - script: |
+        echo "Setting Azure credentials..."
+
         export ARM_SUBSCRIPTION_ID=$(subscription_id)
         export ARM_CLIENT_ID=$(client_id)
         export ARM_CLIENT_SECRET=$(client_secret)
         export ARM_TENANT_ID=$(tenant_id)
+
+        echo "Running Terraform..."
 
         terraform init
         terraform validate
         terraform plan -var-file=env/dev.tfvars
       displayName: "Terraform Init & Plan"
 
-# =========================
-# STAGE 2: APPLY
-# =========================
+# =========================================
+# STAGE 2: APPLY (WITH APPROVAL)
+# =========================================
 - stage: Apply
   displayName: "Terraform Apply"
   dependsOn: Plan
@@ -46,23 +57,33 @@ stages:
 
   jobs:
   - deployment: ApplyJob
-    displayName: "Deploy Infra"
-    environment: 'production'   # 👈 approval here
+    displayName: "Deploy Infrastructure"
+    environment: 'production'   # 👈 approval configured here
 
     strategy:
       runOnce:
         deploy:
           steps:
 
-          - task: TerraformInstaller@1
-            inputs:
-              terraformVersion: '1.6.0'
-
+          # Install Terraform again (new agent)
           - script: |
+              echo "Installing Terraform..."
+              wget https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_amd64.zip
+              unzip terraform_1.6.0_linux_amd64.zip
+              sudo mv terraform /usr/local/bin/
+              terraform -version
+            displayName: "Install Terraform"
+
+          # Apply Terraform
+          - script: |
+              echo "Setting Azure credentials..."
+
               export ARM_SUBSCRIPTION_ID=$(subscription_id)
               export ARM_CLIENT_ID=$(client_id)
               export ARM_CLIENT_SECRET=$(client_secret)
               export ARM_TENANT_ID=$(tenant_id)
+
+              echo "Applying Terraform..."
 
               terraform init
               terraform apply -var-file=env/prod.tfvars -auto-approve
